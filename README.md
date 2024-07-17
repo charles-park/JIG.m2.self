@@ -107,7 +107,7 @@ Type=idle
 
 ### samba config
 ```
-root@server:~# smbpasswd -a odroid
+root@server:~# smbpasswd -a root
 root@server:~# vi /etc/samba/smb.conf
 ```
 ```
@@ -115,10 +115,14 @@ root@server:~# vi /etc/samba/smb.conf
    comment = odroid-m1s jig root
    path = /root
    guest ok = no
-   browseable = no
+   browseable = yes
    writable = yes
    create mask = 0775
    directory mask = 0775
+```
+```
+// samba restart
+root@server:~# service smbd restart
 ```
 
 ### Sound setup
