@@ -26,7 +26,7 @@ root@server:~# echo "deb  http://ppa.linuxfactory.or.kr focal internal" >> /etc/
 root@server:~# apt update && apt upgrade -y
 
 // ubuntu package
-root@server:~# apt install samba ssh build-essential python3 python3-pip ethtool net-tools usbutils git i2c-tools vim cups cups-bsd overlayroot nmap odroid-wiringpi libwiringpi-dev
+root@server:~# apt install samba ssh build-essential python3 python3-pip ethtool net-tools usbutils git i2c-tools vim cups cups-bsd overlayroot nmap 
 
 // python3 package
 root@server:~# pip install aiohttp asyncio
