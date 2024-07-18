@@ -30,6 +30,12 @@ root@server:~# apt install samba ssh build-essential python3 python3-pip ethtool
 
 // python3 package
 root@server:~# pip install aiohttp asyncio
+
+// git config
+root@server:~# git config --global user.email "charles.park@hardkenrel.com"
+root@server:~# git config --global user.name "charles-park"
+root@server:~# git config --global core.editor "vim"
+
 ```
 
 * Edit the /boot/config.ini
