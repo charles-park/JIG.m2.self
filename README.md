@@ -91,7 +91,7 @@ StrictModes yes
 PubkeyAuthentication yes
 ...
 
-root@server:~# service ssh restart
+root@server:~# service sshd restart
 ```
 
 ### auto login
