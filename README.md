@@ -26,7 +26,7 @@ root@server:~# echo "deb  http://ppa.linuxfactory.or.kr focal internal" >> /etc/
 root@server:~# apt update && apt upgrade -y
 
 // ubuntu package
-root@server:~# apt install samba ssh build-essential python3 python3-pip ethtool net-tools usbutils git i2c-tools vim cups cups-bsd overlayroot nmap 
+root@server:~# apt install samba ssh build-essential python3 python3-pip ethtool net-tools usbutils git i2c-tools vim cups cups-bsd overlayroot nmap iperf3
 
 // python3 package
 root@server:~# pip install aiohttp asyncio
@@ -38,12 +38,20 @@ root@server:~# git config --global core.editor "vim"
 
 ```
 
-* Edit the /boot/config.ini
+* Edit the /boot/config.ini, HDMI Resolution (1080p), Header40 All gpio mode.
+```
+// Boot script update (HDMI resolution control)
+root@server:~# cp -r /usr/share/flash-kernel/preboot.d/vendor /usr/share/flash-kernel/preboot.d/upstream
+root@server:~# update-bootscript
+```
 ```
 root@server:~# vi /boot/config.ini
-```
-```
+
 [generic]
+# Added. Vu7 Resolution setup
+resolution=1920x1080
+refresh=60
+
 overlay_resize=16384
 overlay_profile=""
 # default
