@@ -1,0 +1,12 @@
+[submodule "lib_fbui"]
+	path = lib_fbui
+	url = https://github.com/charles-park/lib_fbui
+[submodule "nlp_server_ctrl"]
+	path = nlp_server_ctrl
+	url = https://github.com/charles-park/nlp_server_ctrl
+[submodule "lib_mac"]
+	path = lib_mac
+	url = https://github.com/charles-park/lib_mac
+[submodule "lib_efuse"]
+	path = lib_efuse
+	url = https://github.com/charles-park/lib_efuse
