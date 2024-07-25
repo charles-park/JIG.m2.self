@@ -10,3 +10,6 @@
 [submodule "lib_efuse"]
 	path = lib_efuse
 	url = https://github.com/charles-park/lib_efuse
+[submodule "lib_gpio"]
+	path = lib_gpio
+	url = https://github.com/charles-park/lib_gpio

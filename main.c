@@ -37,12 +37,14 @@
 #include "nlp_server_ctrl/nlp_server_ctrl.h"
 #include "lib_mac/lib_mac.h"
 #include "lib_efuse/lib_efuse.h"
+#include "lib_gpio/lib_gpio.h"
 
 #include "check_device/adc.h"
 #include "check_device/hdmi.h"
 #include "check_device/system.h"
 #include "check_device/storage.h"
 #include "check_device/usb.h"
+#include "check_device/ethernet.h"
 
 //------------------------------------------------------------------------------
 //
@@ -58,8 +60,11 @@
 
 #define APP_LOOP_DELAY  500
 
+#define TIMEOUT_SEC     60
+
 //------------------------------------------------------------------------------
 #define IP_ADDR_SIZE    20
+
 typedef struct client__t {
     // HDMI UI
     fb_info_t   *pfb;
@@ -155,10 +160,211 @@ enum {
     eITEM_USB20,
     eITEM_USB_C,
 
+    // HP_DETECT
+    eITEM_HP_DET,
+
+    eITEM_SW_ADC,
+
+    eITEM_ETHERNET_100M,
+    eITEM_ETHERNET_1G,
+
     eITEM_END
 };
 
 char ItemStatus [eITEM_END] = {0,};
+
+//------------------------------------------------------------------------------
+#define UI_STATUS   47
+#define	RUN_BOX_ON	RGB_TO_UINT(204, 204, 0)
+#define	RUN_BOX_OFF	RGB_TO_UINT(153, 153, 0)
+
+void *check_status (void *arg);
+void *check_status (void *arg)
+{
+    static int onoff = 0;
+    client_t *p = (client_t *)arg;
+    static int TimeoutStop = TIMEOUT_SEC;
+
+    while (TimeoutStop) {
+        ui_set_ritem (p->pfb, p->pui, ALIVE_DISPLAY_UI_ID,
+                    onoff ? COLOR_GREEN : p->pui->bc.uint, -1);
+        onoff = !onoff;
+
+        if ((ItemStatus [eITEM_SERVER] == eSTATUS_PASS) && TimeoutStop) {
+            char str [16];
+
+            memset (str, 0, sizeof(str));
+            sprintf (str, "RUNNING %d", TimeoutStop);
+            ui_set_sitem (p->pfb, p->pui, UI_STATUS, -1, -1, str);
+            ui_set_ritem (p->pfb, p->pui, UI_STATUS, onoff ? RUN_BOX_ON : RUN_BOX_OFF, -1);
+        }
+        if (onoff)  {
+            ui_update (p->pfb, p->pui, -1);
+            if (TimeoutStop)    TimeoutStop--;
+        }
+
+        usleep (APP_LOOP_DELAY * 1000);
+    }
+    while (1)   sleep(1);
+}
+
+//------------------------------------------------------------------------------
+#define HP_DET_GPIO 61
+#define UI_DET_H    198
+#define UI_DET_L    199
+
+void *check_hp_detect (void *arg);
+void *check_hp_detect (void *arg)
+{
+    int value = 0, new_value = 0, status = 0;
+
+    client_t *p = (client_t *)arg;
+
+    gpio_export    (HP_DET_GPIO);
+    gpio_direction (HP_DET_GPIO, GPIO_DIR_IN);
+    gpio_get_value (HP_DET_GPIO, &value);
+
+    while (1) {
+        if (gpio_get_value (HP_DET_GPIO, &new_value)) {
+            if (value != new_value) {
+                value = new_value;
+                status |= value ? 0x02 : 0x01;
+
+                if (value) {
+                    ui_set_sitem (p->pfb, p->pui, UI_DET_H, -1, -1, "PASS");
+                    ui_set_ritem (p->pfb, p->pui, UI_DET_H, COLOR_GREEN, -1);
+                } else {
+                    ui_set_sitem (p->pfb, p->pui, UI_DET_L, -1, -1, "PASS");
+                    ui_set_ritem (p->pfb, p->pui, UI_DET_L, COLOR_GREEN, -1);
+                }
+            }
+        }
+        usleep (APP_LOOP_DELAY * 1000);
+        if (status == 0x03)  ItemStatus[eITEM_HP_DET] = eSTATUS_PASS;
+        if (ItemStatus [eITEM_HP_DET] == eSTATUS_PASS)  break;
+    }
+    gpio_unexport  (HP_DET_GPIO);
+}
+
+//------------------------------------------------------------------------------
+#define SW_ADC_PATH "/sys/bus/iio/devices/iio:device0/in_voltage0_raw"
+#define UI_SW_eMMC  178
+#define UI_SW_uSD   179
+
+// emmc : 1380 - 1390 - 1400
+// sd : 680 - 690 - 700
+int sw_adc_read (const char *path)
+{
+    char rdata[16];
+    FILE *fp;
+
+    memset (rdata, 0, sizeof (rdata));
+    // adc raw value get
+    if ((fp = fopen(path, "r")) != NULL) {
+        fgets (rdata, sizeof(rdata), fp);
+        fclose(fp);
+    }
+    return atoi(rdata);
+}
+
+#define SW_eMMC_MIN 1380
+#define SW_eMMC_MAX 1400
+#define SW_uSD_MIN  680
+#define SW_uSD_MAX  700
+
+void *check_sw_adc (void *arg);
+void *check_sw_adc (void *arg)
+{
+    int value = 0, new_value = 0, status = 0, adc_value = 0;
+
+    client_t *p = (client_t *)arg;
+
+    adc_value = sw_adc_read (SW_ADC_PATH);
+
+    if ((SW_eMMC_MIN < adc_value) && (SW_eMMC_MAX > adc_value ))
+        value = 0;
+
+    if ((SW_uSD_MIN < adc_value) && (SW_uSD_MAX > adc_value ))
+        value = 1;
+
+    while (1) {
+        adc_value = sw_adc_read (SW_ADC_PATH);
+
+        if ((SW_eMMC_MIN < adc_value) && (SW_eMMC_MAX > adc_value))
+            new_value = 0;
+
+        if ((SW_uSD_MIN < adc_value) && (SW_uSD_MAX > adc_value))
+            new_value = 1;
+
+        if (value != new_value) {
+            value = new_value;
+            status |= value ? 0x02 : 0x01;
+
+            if (value) {
+                ui_set_sitem (p->pfb, p->pui, UI_SW_uSD, -1, -1, "PASS");
+                ui_set_ritem (p->pfb, p->pui, UI_SW_uSD, COLOR_GREEN, -1);
+            } else {
+                ui_set_sitem (p->pfb, p->pui, UI_SW_eMMC, -1, -1, "PASS");
+                ui_set_ritem (p->pfb, p->pui, UI_SW_eMMC, COLOR_GREEN, -1);
+            }
+        }
+
+        usleep (APP_LOOP_DELAY * 1000);
+        if (status == 0x03)  ItemStatus[eITEM_SW_ADC] = eSTATUS_PASS;
+        if (ItemStatus [eITEM_SW_ADC] == eSTATUS_PASS)  break;
+    }
+}
+
+//------------------------------------------------------------------------------
+//------------------------------------------------------------------------------
+//#define LINK_SPEED_1G       1000
+//#define LINK_SPEED_100M     100
+
+#define UI_ETHERNET_100M    152
+#define UI_ETHERNET_1G      153
+#define UI_ETHERNET_SWITCH  154
+
+void *check_device_ethernet (void *arg)
+{
+    int speed;
+    client_t *p = (client_t *)arg;
+
+    ItemStatus [eITEM_ETHERNET_100M] = eSTATUS_FAIL;
+    ItemStatus [eITEM_ETHERNET_1G]   = eSTATUS_FAIL;
+
+    while (1) {
+        switch (speed) {
+            case LINK_SPEED_1G:
+                if (ethernet_link_setup (LINK_SPEED_100M)) {
+                    ItemStatus [eITEM_ETHERNET_100M] = eSTATUS_PASS;
+                    ui_set_sitem (p->pfb, p->pui, UI_ETHERNET_100M, -1, -1, "PASS");
+                    ui_set_ritem (p->pfb, p->pui, UI_ETHERNET_100M, COLOR_GREEN, -1);
+                }
+                break;
+            case LINK_SPEED_100M:
+                if (ethernet_link_setup (LINK_SPEED_1G)) {
+                    ItemStatus [eITEM_ETHERNET_1G] = eSTATUS_PASS;
+                    ui_set_sitem (p->pfb, p->pui, UI_ETHERNET_1G, -1, -1, "PASS");
+                    ui_set_ritem (p->pfb, p->pui, UI_ETHERNET_1G, COLOR_GREEN, -1);
+                }
+                break;
+            default :
+                break;
+        }
+        speed = ethernet_link_check ();
+        if ((ItemStatus [eITEM_ETHERNET_1G]   == eSTATUS_PASS) &&
+            (ItemStatus [eITEM_ETHERNET_100M] == eSTATUS_PASS)) {
+            if (speed == LINK_SPEED_100M)
+                ui_set_sitem (p->pfb, p->pui, UI_ETHERNET_SWITCH, -1, -1, "GREEN");
+            else
+                ui_set_sitem (p->pfb, p->pui, UI_ETHERNET_SWITCH, -1, -1, "ORANGE");
+
+            ui_set_ritem (p->pfb, p->pui, UI_ETHERNET_SWITCH, RUN_BOX_ON, -1);
+        }
+        sleep (1);
+    }
+    return 0;
+}
 
 //------------------------------------------------------------------------------
 #define UI_USB30    102
@@ -438,18 +644,28 @@ static int check_server (client_t *p)
 //------------------------------------------------------------------------------
 static int client_setup (client_t *p)
 {
+	pthread_t thread_hp_detect, thread_sw_adc, thread_check_server, thread_ethernet;
+
     if ((p->pfb = fb_init (DEVICE_FB)) == NULL)         exit(1);
     if ((p->pui = ui_init (p->pfb, CONFIG_UI)) == NULL) exit(1);
+//void *check_status (void *arg)
+
+    pthread_create (&thread_check_server, NULL, check_status, p);
+    pthread_create (&thread_hp_detect, NULL, check_hp_detect, p);
+    pthread_create (&thread_sw_adc,    NULL, check_sw_adc, p);
+
+    ethernet_link_setup (LINK_SPEED_1G);    sleep(1);
 
     check_server (p);
     check_iperf_speed (p);
     check_mac_addr (p);
-
     check_device_adc (p);
     check_device_hdmi(p);
     check_device_system (p);
     check_device_storage (p);
     check_device_usb (p);
+
+    pthread_create (&thread_ethernet,  NULL, check_device_ethernet, p);
 
     return 1;
 }
@@ -497,9 +713,9 @@ int main (void)
 #endif
 
     while (1) {
-        client_alive_display (&client);
+//        client_alive_display (&client);
 
-        usleep (APP_LOOP_DELAY);
+//        usleep (APP_LOOP_DELAY);
     }
     return 0;
 }
