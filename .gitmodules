@@ -13,3 +13,6 @@
 [submodule "lib_gpio"]
 	path = lib_gpio
 	url = https://github.com/charles-park/lib_gpio
+[submodule "lib_i2cadc"]
+	path = lib_i2cadc
+	url = https://github.com/charles-park/lib_i2cadc

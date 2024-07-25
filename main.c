@@ -45,6 +45,7 @@
 #include "check_device/storage.h"
 #include "check_device/usb.h"
 #include "check_device/ethernet.h"
+#include "check_device/led.h"
 
 //------------------------------------------------------------------------------
 //
@@ -173,6 +174,7 @@ enum {
 
 char ItemStatus [eITEM_END] = {0,};
 
+static int TimeoutStop = TIMEOUT_SEC;
 //------------------------------------------------------------------------------
 #define UI_STATUS   47
 #define	RUN_BOX_ON	RGB_TO_UINT(204, 204, 0)
@@ -183,7 +185,6 @@ void *check_status (void *arg)
 {
     static int onoff = 0;
     client_t *p = (client_t *)arg;
-    static int TimeoutStop = TIMEOUT_SEC;
 
     while (TimeoutStop) {
         ui_set_ritem (p->pfb, p->pui, ALIVE_DISPLAY_UI_ID,
@@ -203,6 +204,8 @@ void *check_status (void *arg)
             if (TimeoutStop)    TimeoutStop--;
         }
 
+        led_set_status (eLED_POWER,  onoff);
+        led_set_status ( eLED_ALIVE, onoff);
         usleep (APP_LOOP_DELAY * 1000);
     }
     while (1)   sleep(1);
@@ -224,7 +227,7 @@ void *check_hp_detect (void *arg)
     gpio_direction (HP_DET_GPIO, GPIO_DIR_IN);
     gpio_get_value (HP_DET_GPIO, &value);
 
-    while (1) {
+    while (TimeoutStop) {
         if (gpio_get_value (HP_DET_GPIO, &new_value)) {
             if (value != new_value) {
                 value = new_value;
@@ -239,7 +242,7 @@ void *check_hp_detect (void *arg)
                 }
             }
         }
-        usleep (APP_LOOP_DELAY * 1000);
+        usleep (100 * 1000);
         if (status == 0x03)  ItemStatus[eITEM_HP_DET] = eSTATUS_PASS;
         if (ItemStatus [eITEM_HP_DET] == eSTATUS_PASS)  break;
     }
@@ -287,7 +290,7 @@ void *check_sw_adc (void *arg)
     if ((SW_uSD_MIN < adc_value) && (SW_uSD_MAX > adc_value ))
         value = 1;
 
-    while (1) {
+    while (TimeoutStop) {
         adc_value = sw_adc_read (SW_ADC_PATH);
 
         if ((SW_eMMC_MIN < adc_value) && (SW_eMMC_MAX > adc_value))
@@ -332,7 +335,7 @@ void *check_device_ethernet (void *arg)
     ItemStatus [eITEM_ETHERNET_100M] = eSTATUS_FAIL;
     ItemStatus [eITEM_ETHERNET_1G]   = eSTATUS_FAIL;
 
-    while (1) {
+    while (TimeoutStop) {
         switch (speed) {
             case LINK_SPEED_1G:
                 if (ethernet_link_setup (LINK_SPEED_100M)) {
@@ -644,15 +647,13 @@ static int check_server (client_t *p)
 //------------------------------------------------------------------------------
 static int client_setup (client_t *p)
 {
-	pthread_t thread_hp_detect, thread_sw_adc, thread_check_server, thread_ethernet;
-
+	pthread_t thread_hp_detect, thread_sw_adc, thread_check_status, thread_ethernet;
     if ((p->pfb = fb_init (DEVICE_FB)) == NULL)         exit(1);
     if ((p->pui = ui_init (p->pfb, CONFIG_UI)) == NULL) exit(1);
-//void *check_status (void *arg)
 
-    pthread_create (&thread_check_server, NULL, check_status, p);
-    pthread_create (&thread_hp_detect, NULL, check_hp_detect, p);
-    pthread_create (&thread_sw_adc,    NULL, check_sw_adc, p);
+    pthread_create (&thread_check_status, NULL, check_status, p);
+    pthread_create (&thread_hp_detect,    NULL, check_hp_detect, p);
+    pthread_create (&thread_sw_adc,       NULL, check_sw_adc, p);
 
     ethernet_link_setup (LINK_SPEED_1G);    sleep(1);
 
