@@ -65,7 +65,8 @@
 
 #define APP_LOOP_DELAY  500
 
-#define TIMEOUT_SEC     60
+//#define TIMEOUT_SEC     60
+#define TIMEOUT_SEC     30
 
 #define IP_ADDR_SIZE    20
 
@@ -263,6 +264,36 @@ static int run_interval_check (struct timeval *t, double interval_ms)
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
+#define	PRINT_MAX_CHAR	50
+#define	PRINT_MAX_LINE	2
+
+int errcode_print (client_t *p)
+{
+    char err_msg[PRINT_MAX_LINE][PRINT_MAX_CHAR+1];
+    int pos = 0, i, line;
+
+    memset (err_msg, 0, sizeof(err_msg));
+
+    for (i = 0, line = 0; i < eITEM_END; i++) {
+        if (!m2_item[i].result) {
+            if ((pos + strlen(m2_item[i].name) + 1) > PRINT_MAX_CHAR) {
+                pos = 0, line++;
+            }
+            pos += sprintf (&err_msg[line][pos], "%s,", m2_item[i].name);
+            ui_set_ritem (p->pfb, p->pui, m2_item [i].ui_id, COLOR_RED, -1);
+        }
+    }
+    if (pos || line) {
+        for (i = 0; i < line+1; i++) {
+            nlp_server_write (p->nlp_ip, NLP_SERVER_MSG_TYPE_ERR, &err_msg[i][0], 0);
+            printf ("%s : msg = %s\n", __func__, &err_msg[i][0]);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+//------------------------------------------------------------------------------
 #define UI_STATUS   47
 #define	RUN_BOX_ON	RGB_TO_UINT(204, 204, 0)
 #define	RUN_BOX_OFF	RGB_TO_UINT(153, 153, 0)
@@ -271,6 +302,7 @@ void *check_status (void *arg);
 void *check_status (void *arg)
 {
     static int onoff = 0;
+    char str [16];
     client_t *p = (client_t *)arg;
 
     while (TimeoutStop) {
@@ -279,8 +311,6 @@ void *check_status (void *arg)
         onoff = !onoff;
 
         if (m2_item[eITEM_SERVER_IP].result && TimeoutStop) {
-            char str [16];
-
             memset (str, 0, sizeof(str));
             sprintf (str, "RUNNING %d", TimeoutStop);
             ui_set_sitem (p->pfb, p->pui, UI_STATUS, -1, -1, str);
@@ -296,7 +326,11 @@ void *check_status (void *arg)
         usleep (APP_LOOP_DELAY * 1000);
     }
     // display stop
-    // error print
+    ethernet_link_setup (LINK_SPEED_1G);    sleep(1);
+    memset (str, 0, sizeof(str));   sprintf (str, "%s", "FINISH");
+    ui_set_sitem (p->pfb, p->pui, UI_STATUS, -1, -1, str);
+    ui_set_ritem (p->pfb, p->pui, UI_STATUS, errcode_print (p) ? COLOR_RED : COLOR_GREEN, -1);
+
     while (1)   sleep(1);
 }
 
@@ -502,6 +536,7 @@ static int check_header (client_t *p)
         adc_board_read (p->adc_fd,  "CON1", &pattern40[1],  &cnt);
         adc_board_read (p->adc_fd, "P13.6", &pattern14[13], &cnt);
         if (header_pattern_check (i, pattern40, pattern14)) {
+            m2_item[eITEM_HEADER_PT1 + i].result = eRESULT_PASS;
             ui_set_sitem (p->pfb, p->pui, ui_id + i, -1, -1, "PASS");
             ui_set_ritem (p->pfb, p->pui, ui_id + i, COLOR_GREEN, -1);
         } else {
@@ -775,7 +810,7 @@ static int check_device_audio (client_t *p)
 
 static int client_setup (client_t *p)
 {
-	pthread_t thread_hp_detect, thread_sw_adc, thread_check_status, thread_ethernet;
+    pthread_t thread_hp_detect, thread_sw_adc, thread_check_status, thread_ethernet;
 
     if ((p->pfb = fb_init (DEVICE_FB)) == NULL)         exit(1);
     if ((p->pui = ui_init (p->pfb, CONFIG_UI)) == NULL) exit(1);
@@ -821,6 +856,7 @@ int main (void)
     client_setup (&client);
 
     while (1) {
+        sleep (1);
 //        client_alive_display (&client);
 //        usleep (APP_LOOP_DELAY);
     }
