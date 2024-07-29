@@ -317,7 +317,13 @@ void *check_status (void *arg)
     ui_set_sitem (p->pfb, p->pui, UI_STATUS, -1, -1, str);
     ui_set_ritem (p->pfb, p->pui, UI_STATUS, errcode_print (p) ? COLOR_RED : COLOR_GREEN, -1);
 
-    while (1)   sleep(1);
+    while (1) {
+        usleep (APP_LOOP_DELAY * 1000);
+        ui_set_ritem (p->pfb, p->pui, UI_STATUS, onoff ? COLOR_GREEN : p->pui->bc.uint, -1);
+        onoff = !onoff;
+
+        if (onoff)  ui_update    (p->pfb, p->pui, -1);
+    }
     return arg;
 }
 
