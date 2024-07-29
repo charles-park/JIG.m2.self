@@ -293,12 +293,10 @@ void *check_status (void *arg)
                 sprintf (str, "I2CADC %d", TimeoutStop);
             }
             ui_set_sitem (p->pfb, p->pui, UI_STATUS, -1, -1, str);
-
-            if (TimeoutStop && (p->adc_fd != -1))   TimeoutStop--;
         }
-        if (onoff)  {
+        if (onoff) {
             ui_update (p->pfb, p->pui, -1);
-            if (TimeoutStop)    TimeoutStop--;
+            if (TimeoutStop && (p->adc_fd != -1))   TimeoutStop--;
         }
 
         led_set_status (eLED_POWER,  onoff);
