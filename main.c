@@ -304,7 +304,9 @@ void *check_status (void *arg)
                 if (m2_item[i].status == eSTATUS_STOP) stop_cnt++;
             }
 
-            if (stop_cnt == eITEM_END) break;
+            if (stop_cnt == eITEM_END) {
+                TimeoutStop = 0;    sleep (1);  break;
+            }
         }
     }
     // display stop
