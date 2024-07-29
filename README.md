@@ -11,9 +11,20 @@ ODROID-M2 (RK3588) Self-test Jig Source
  * Kernel : Linux server 5.10.0-odroid-arm64 #1 SMP Ubuntu 5.10.198-202406031228~focal (2024-06-03) aarch64 aarch64 aarch64 GNU/Linux
  * U-Boot : U-Boot 2017.09-g288fbfedb12-231011 #tobetter (Jul 15 2024 - 16:16:55 +0900)
 
-### SSH connect error (permission denied)
- * root@server:~# rm /etc/ssh/sshd_config.d/60-cloudimg-settings.conf
- * root@server:~# service ssh restart
+### Clone the reopsitory with submodule
+```
+root@odroid:~# git clone --recursive https://github.com/charles-park/JIG.m2.self
+
+or
+
+root@odroid:~# git clone https://github.com/charles-park/JIG.m2.self
+root@odroid:~# cd JIG.m2.self
+root@odroid:~/JIG.m2.self# git submodule update --init --recursive
+
+// app build and all package install
+root@odroid:~/JIG.m2.self# ./install
+
+```
 
 ### Self mode settings
 * Install ubuntu package & python3 module
@@ -26,7 +37,7 @@ root@server:~# echo "deb  http://ppa.linuxfactory.or.kr focal internal" >> /etc/
 root@server:~# apt update && apt upgrade -y
 
 // ubuntu package
-root@server:~# apt install samba ssh build-essential python3 python3-pip ethtool net-tools usbutils git i2c-tools vim cups cups-bsd overlayroot nmap iperf3
+root@server:~# apt install apt install samba ssh build-essential python3 python3-pip ethtool net-tools usbutils git i2c-tools vim cups cups-bsd overlayroot nmap iperf3 alsa-utils
 
 // python3 package
 root@server:~# pip install aiohttp asyncio
@@ -69,27 +80,6 @@ overlays="hktft32"
 [overlay_hktft35]
 overlays="hktft35 sx865x-i2c1"
 ```
-### Clone the reopsitory with submodule
-```
-root@odroid:~# git clone --recursive https://github.com/charles-park/JIG.m2.self
-
-or
-
-root@odroid:~# git clone https://github.com/charles-park/JIG.m2.self
-root@odroid:~# cd JIG.m2.self
-root@odroid:~/JIG.m2.self# git submodule update --init --recursive
-
-// app build and install
-root@odroid:~/JIG.m2.self# make
-root@odroid:~/JIG.m2.self# cd service
-root@odroid:~/JIG.m2.self/service# ./install
-
-```
-
-### iperf3 install
-```
-root@server:~# apt install iperf3
-```
 
 ### add root user, ssh root enable (https://www.leafcats.com/176)
 ```
@@ -105,6 +95,10 @@ StrictModes yes
 PubkeyAuthentication yes
 ...
 
+// ssh connect issue fix
+root@server:~# rm /etc/ssh/sshd_config.d/60-cloudimg-settings.conf
+
+// ssh daemon restart
 root@server:~# service sshd restart
 ```
 
