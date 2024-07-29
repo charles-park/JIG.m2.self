@@ -54,6 +54,8 @@ echo " * ODROID-JIG service install * "
 echo ""
 echo ""
 
+make clean && make
+
 systemctl disable odroid-jig.service && sync
 
 cp ./service/odroid-jig.service /etc/systemd/system/ && sync
@@ -81,5 +83,7 @@ echo "   root&server:~# vi /etc/overlayroot.conf "
 echo ""
 echo ""
 cp ./service/sshd_config /etc/ssh/ && sync
+# root@server:/etc/ssh/sshd_config.d# rm -f 60-cloudimg-settings.conf
+rm -f /etc/ssh/sshd_config.d/60-cloudimg-settings.conf && sync
 cp ./service/smb.conf /etc/samba/smb.conf && sync
 

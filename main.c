@@ -866,7 +866,7 @@ static int audio_sine_wave (client_t *p, int ch)
 
 static int check_device_audio (client_t *p)
 {
-    int retry = 2;
+    int retry = 3;
 
 retry_audio:
     m2_item [eITEM_AUDIO_LEFT].status = eSTATUS_RUN;
