@@ -274,7 +274,7 @@ int errcode_print (client_t *p)
 void *check_status (void *arg);
 void *check_status (void *arg)
 {
-    static int onoff = 0;
+    static int onoff = 0, err = 0;
     char str [16];
     client_t *p = (client_t *)arg;
 
@@ -285,9 +285,16 @@ void *check_status (void *arg)
 
         if (m2_item[eITEM_SERVER_IP].result && TimeoutStop) {
             memset (str, 0, sizeof(str));
-            sprintf (str, "RUNNING %d", TimeoutStop);
+            if (p->adc_fd != -1) {
+                ui_set_ritem (p->pfb, p->pui, UI_STATUS, onoff ? RUN_BOX_ON : RUN_BOX_OFF, -1);
+                sprintf (str, "RUNNING %d", TimeoutStop);
+            } else {
+                ui_set_ritem (p->pfb, p->pui, UI_STATUS, onoff ? COLOR_RED : p->pui->bc.uint, -1);
+                sprintf (str, "I2CADC %d", TimeoutStop);
+            }
             ui_set_sitem (p->pfb, p->pui, UI_STATUS, -1, -1, str);
-            ui_set_ritem (p->pfb, p->pui, UI_STATUS, onoff ? RUN_BOX_ON : RUN_BOX_OFF, -1);
+
+            if (TimeoutStop && (p->adc_fd != -1))   TimeoutStop--;
         }
         if (onoff)  {
             ui_update (p->pfb, p->pui, -1);
@@ -315,14 +322,18 @@ void *check_status (void *arg)
     if (m2_item [eITEM_MAC_ADDR].result)
         nlp_server_write (p->nlp_ip, NLP_SERVER_MSG_TYPE_MAC, p->mac, p->channel);
     ui_set_sitem (p->pfb, p->pui, UI_STATUS, -1, -1, str);
-    ui_set_ritem (p->pfb, p->pui, UI_STATUS, errcode_print (p) ? COLOR_RED : COLOR_GREEN, -1);
+    err = errcode_print (p);
+    ui_set_ritem (p->pfb, p->pui, UI_STATUS, err ? COLOR_RED : COLOR_GREEN, -1);
 
     while (1) {
         usleep (APP_LOOP_DELAY * 1000);
-        ui_set_ritem (p->pfb, p->pui, UI_STATUS, onoff ? COLOR_GREEN : p->pui->bc.uint, -1);
         onoff = !onoff;
 
-        if (onoff)  ui_update    (p->pfb, p->pui, -1);
+        if (onoff)
+            ui_set_ritem (p->pfb, p->pui, UI_STATUS, err ? COLOR_RED : COLOR_GREEN, -1);
+        else
+            ui_set_ritem (p->pfb, p->pui, UI_STATUS, p->pui->bc.uint, -1);
+        ui_update    (p->pfb, p->pui, -1);
     }
     return arg;
 }
@@ -673,7 +684,7 @@ static int check_device_hdmi (client_t *p)
     // HPD
     m2_item[eITEM_HPD].status = eSTATUS_RUN;
     ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_HPD].ui_id, COLOR_YELLOW, -1);
-    value = adc_check (eHDMI_HPD);
+    value = hdmi_check (eHDMI_HPD);
     ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_HPD].ui_id, -1, -1, value ? "PASS":"FAIL");
     ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_HPD].ui_id, value ? COLOR_GREEN : COLOR_RED, -1);
     m2_item[eITEM_HPD].result = value ? eRESULT_PASS : eRESULT_FAIL;
@@ -783,6 +794,23 @@ static int check_iperf_speed (client_t *p)
 }
 
 //------------------------------------------------------------------------------
+#define I2C_ADC_DEV "gpio,sda,116,scl,117"
+
+static int check_i2cadc (client_t *p)
+{
+    // ADC Board Check
+    int value = 0, cnt = 1;
+
+    p->adc_fd = adc_board_init (I2C_ADC_DEV);
+    if (p->adc_fd != -1) {
+        adc_board_read (p->adc_fd, "P3.2", &value, &cnt);
+        p->channel = (value > 4000) ? NLP_SERVER_CHANNEL_RIGHT : NLP_SERVER_CHANNEL_LEFT;
+        return 1;
+    }
+    return 0;
+}
+
+//------------------------------------------------------------------------------
 static int check_server (client_t *p)
 {
     char ip_addr [IP_ADDR_SIZE];
@@ -790,7 +818,6 @@ static int check_server (client_t *p)
     memset (ip_addr, 0, sizeof(ip_addr));
 
     m2_item [eITEM_BOARD_IP].status = m2_item [eITEM_SERVER_IP].status = eSTATUS_RUN;
-
     ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_BOARD_IP].ui_id, COLOR_YELLOW, -1);
     if (get_my_ip (ip_addr)) {
         ui_set_sitem (p->pfb, p->pui, m2_item [eITEM_BOARD_IP].ui_id, -1, -1, ip_addr);
@@ -815,7 +842,7 @@ static int check_server (client_t *p)
         ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_BOARD_IP].ui_id, COLOR_RED, -1);
     }
 
-    return 1;
+    return 0;
 }
 
 //------------------------------------------------------------------------------
@@ -841,6 +868,9 @@ static int audio_sine_wave (client_t *p, int ch)
 
 static int check_device_audio (client_t *p)
 {
+    int retry = 2;
+
+retry_audio:
     m2_item [eITEM_AUDIO_LEFT].status = eSTATUS_RUN;
     ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_LEFT].ui_id, COLOR_YELLOW, -1);
 
@@ -867,33 +897,28 @@ static int check_device_audio (client_t *p)
     }
     m2_item [eITEM_AUDIO_RIGHT].status = eSTATUS_STOP;
 
+    if (!m2_item [eITEM_AUDIO_LEFT].result || !m2_item [eITEM_AUDIO_RIGHT].result) {
+        if (retry)  {   retry--;    goto retry_audio; }
+    }
     return 1;
 }
 
 //------------------------------------------------------------------------------
-#define I2C_ADC_DEV "gpio,sda,116,scl,117"
-
 static int client_setup (client_t *p)
 {
-    pthread_t thread_hp_detect, thread_sw_adc, thread_check_status, thread_ethernet;
+    pthread_t thread_hp_detect, thread_check_status, thread_ethernet;
     pthread_t thread_usb, thread_storage;
 
     if ((p->pfb = fb_init (DEVICE_FB)) == NULL)         exit(1);
     if ((p->pui = ui_init (p->pfb, CONFIG_UI)) == NULL) exit(1);
 
-    {
-        int value = 0, cnt = 1;
-        p->adc_fd = adc_board_init (I2C_ADC_DEV);
-        adc_board_read (p->adc_fd, "P3.2", &value, &cnt);
-        p->channel = (value > 4000) ? NLP_SERVER_CHANNEL_RIGHT : NLP_SERVER_CHANNEL_LEFT;
-    }
+    check_i2cadc (p);
 
     pthread_create (&thread_check_status, NULL, check_status, p);
 
     while (!check_server (p))   sleep (1);
 
     pthread_create (&thread_hp_detect,    NULL, check_hp_detect, p);
-    pthread_create (&thread_sw_adc,       NULL, check_sw_adc, p);
 
     ethernet_link_setup (LINK_SPEED_1G);    sleep(1);
 
@@ -904,14 +929,8 @@ static int client_setup (client_t *p)
     pthread_create (&thread_storage,  NULL, check_device_storage, p);
     pthread_create (&thread_ethernet, NULL, check_device_ethernet, p);
 
-    check_device_adc (p);
     check_device_hdmi(p);
     check_device_system (p);
-//    check_device_storage (p);
-//    check_device_usb (p);
-    check_header (p);
-
-    check_device_audio (p);
 
     return 1;
 }
@@ -921,11 +940,19 @@ static int client_setup (client_t *p)
 int main (void)
 {
     client_t client;
+    pthread_t thread_sw_adc;
 
     memset (&client, 0, sizeof(client));
 
     // UI
     client_setup (&client);
+
+    while (!check_i2cadc (&client))  sleep(1);
+
+    pthread_create (&thread_sw_adc, NULL, check_sw_adc, &client);
+    check_device_adc (&client);
+    check_header (&client);
+    check_device_audio (&client);
 
     while (1)   sleep (1);
 
