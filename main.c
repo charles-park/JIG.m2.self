@@ -771,9 +771,10 @@ static int check_mac_addr (client_t *p)
 
 static int check_iperf_speed (client_t *p)
 {
-    int value = 0;
+    int value = 0, retry = 3;
     char str[32];
 
+retry_iperf:
     m2_item [eITEM_IPERF].status = eSTATUS_RUN;
     ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_IPERF].ui_id, COLOR_YELLOW, -1);
     nlp_server_write (p->nlp_ip, NLP_SERVER_MSG_TYPE_UDP, "start", 0);  sleep (1);
@@ -788,6 +789,10 @@ static int check_iperf_speed (client_t *p)
     m2_item [eITEM_IPERF].result = value > IPERF_SPEED_MIN ? eRESULT_PASS : eRESULT_FAIL;
     m2_item [eITEM_IPERF].status = eSTATUS_STOP;
 
+    if (!m2_item [eITEM_IPERF].result) {
+        sleep (1);
+        if (retry) {    retry--;    goto retry_iperf;   }
+    }
     return 1;
 }
 
@@ -896,6 +901,7 @@ retry_audio:
     m2_item [eITEM_AUDIO_RIGHT].status = eSTATUS_STOP;
 
     if (!m2_item [eITEM_AUDIO_LEFT].result || !m2_item [eITEM_AUDIO_RIGHT].result) {
+        sleep (1);
         if (retry)  {   retry--;    goto retry_audio; }
     }
     return 1;
