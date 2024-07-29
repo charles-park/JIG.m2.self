@@ -400,6 +400,8 @@ int sw_adc_read (const char *path)
 #define SW_uSD_MIN  680
 #define SW_uSD_MAX  700
 
+static int check_i2cadc (client_t *p);
+
 void *check_sw_adc (void *arg);
 void *check_sw_adc (void *arg)
 {
@@ -407,13 +409,18 @@ void *check_sw_adc (void *arg)
 
     client_t *p = (client_t *)arg;
 
-    adc_value = sw_adc_read (SW_ADC_PATH);
+    while (!check_i2cadc(p))     sleep(1);
 
-    if ((SW_eMMC_MIN < adc_value) && (SW_eMMC_MAX > adc_value ))
-        value = 0;
+    while (1) {
+        adc_value = sw_adc_read (SW_ADC_PATH);
 
-    if ((SW_uSD_MIN < adc_value) && (SW_uSD_MAX > adc_value ))
-        value = 1;
+        if ((SW_eMMC_MIN < adc_value) && (SW_eMMC_MAX > adc_value ))
+        {   value = 0;  break; }
+
+        if ((SW_uSD_MIN < adc_value) && (SW_uSD_MAX > adc_value ))
+        {   value = 1;  break; }
+        printf ("sw adc value error! (emmc:1380~1400, sd:680~700) : %d\n", adc_value);
+    }
 
     m2_item[eITEM_SW_uSD].status = m2_item[eITEM_SW_eMMC].status = eSTATUS_RUN;
     while (TimeoutStop) {
@@ -511,7 +518,7 @@ void *check_device_usb (void *arg)
             ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_USB30].ui_id, -1, -1, str);
             ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_USB30].ui_id, (value > 100) ? COLOR_GREEN : COLOR_RED, -1);
             m2_item[eITEM_USB30].result = (value > 100) ? eRESULT_PASS : eRESULT_FAIL;
-            if (m2_item[eITEM_USB30].result)    m2_item[eITEM_USB30].status = eSTATUS_STOP;
+            m2_item[eITEM_USB30].status = eSTATUS_STOP;
         }
 
         // USB20
@@ -524,7 +531,7 @@ void *check_device_usb (void *arg)
             ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_USB20].ui_id, -1, -1, str);
             ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_USB20].ui_id, (value > 25) ? COLOR_GREEN : COLOR_RED, -1);
             m2_item[eITEM_USB20].result = (value > 30) ? eRESULT_PASS : eRESULT_FAIL;
-            if (m2_item[eITEM_USB20].result)    m2_item[eITEM_USB20].status = eSTATUS_STOP;
+            m2_item[eITEM_USB20].status = eSTATUS_STOP;
         }
 
         // USB_C
@@ -537,7 +544,7 @@ void *check_device_usb (void *arg)
             ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_USB_C].ui_id, -1, -1, str);
             ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_USB_C].ui_id, (value > 100) ? COLOR_GREEN : COLOR_RED, -1);
             m2_item[eITEM_USB_C].result = (value > 100) ? eRESULT_PASS : eRESULT_FAIL;
-            if (m2_item[eITEM_USB_C].result)    m2_item[eITEM_USB_C].status = eSTATUS_STOP;
+            m2_item[eITEM_USB_C].status = eSTATUS_STOP;
         }
         if (m2_item[eITEM_USB30].result && m2_item[eITEM_USB20].result && m2_item[eITEM_USB_C].result)
             break;
@@ -550,30 +557,33 @@ void *check_device_usb (void *arg)
 //------------------------------------------------------------------------------
 static int check_header (client_t *p)
 {
+    static int init = 0;
     int ui_id = m2_item[eITEM_HEADER_PT1].ui_id, i;
     int pattern40[40 +1], pattern14[14 +1], cnt;
 
-    header_init ();
+    if (!init)  {   header_init (); init = 1; }
 
     for (i = 0; i < eHEADER_END; i++) {
-        ui_set_ritem (p->pfb, p->pui, ui_id + i, COLOR_YELLOW, -1);
-        m2_item[eITEM_HEADER_PT1 + i].status = eSTATUS_RUN;
-        header_pattern_set   (i);
-        memset (pattern40, 0, sizeof(pattern40));
-        memset (pattern14, 0, sizeof(pattern14));
-        adc_board_read (p->adc_fd,  "CON1", &pattern40[1],  &cnt);
-        adc_board_read (p->adc_fd, "P13.6", &pattern14[13], &cnt);
-        if (header_pattern_check (i, pattern40, pattern14)) {
-            m2_item[eITEM_HEADER_PT1 + i].result = eRESULT_PASS;
-            ui_set_sitem (p->pfb, p->pui, ui_id + i, -1, -1, "PASS");
-            ui_set_ritem (p->pfb, p->pui, ui_id + i, COLOR_GREEN, -1);
-        } else {
-            ui_set_sitem (p->pfb, p->pui, ui_id + i, -1, -1, "FAIL");
-            ui_set_ritem (p->pfb, p->pui, ui_id + i, COLOR_RED, -1);
+        if (!m2_item[eITEM_HEADER_PT1 + i].result) {
+            ui_set_ritem (p->pfb, p->pui, ui_id + i, COLOR_YELLOW, -1);
+            m2_item[eITEM_HEADER_PT1 + i].status = eSTATUS_RUN;
+            header_pattern_set   (i);   usleep (100 * 1000);
+            memset (pattern40, 0, sizeof(pattern40));
+            memset (pattern14, 0, sizeof(pattern14));
+            adc_board_read (p->adc_fd,  "CON1", &pattern40[1],  &cnt);
+            adc_board_read (p->adc_fd, "P13.6", &pattern14[13], &cnt);
+            if (header_pattern_check (i, pattern40, pattern14)) {
+                m2_item[eITEM_HEADER_PT1 + i].result = eRESULT_PASS;
+                ui_set_sitem (p->pfb, p->pui, ui_id + i, -1, -1, "PASS");
+                ui_set_ritem (p->pfb, p->pui, ui_id + i, COLOR_GREEN, -1);
+            } else {
+                m2_item[eITEM_HEADER_PT1 + i].result = eRESULT_FAIL;
+                ui_set_sitem (p->pfb, p->pui, ui_id + i, -1, -1, "FAIL");
+                ui_set_ritem (p->pfb, p->pui, ui_id + i, COLOR_RED, -1);
+            }
+            m2_item[eITEM_HEADER_PT1 + i].status = eSTATUS_STOP;
         }
-        m2_item[eITEM_HEADER_PT1 + i].status = eSTATUS_STOP;
     }
-
     return 1;
 }
 
@@ -641,26 +651,29 @@ static int check_device_system (client_t *p)
     char str[10];
 
     // MEM
-    m2_item[eITEM_MEM].status = eSTATUS_RUN;
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, COLOR_YELLOW, -1);
-    value = system_check (eSYSTEM_MEM);
-    memset (str, 0, sizeof(str));   sprintf(str, "%d GB", value);
-
-    ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, -1, -1, str);
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, value ? COLOR_GREEN : COLOR_RED, -1);
-    m2_item[eITEM_MEM].result = value ? eRESULT_PASS : eRESULT_FAIL;
-    m2_item[eITEM_MEM].status = eSTATUS_STOP;
+    if (!m2_item[eITEM_MEM].result) {
+        m2_item[eITEM_MEM].status = eSTATUS_RUN;
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, COLOR_YELLOW, -1);
+        value = system_check (eSYSTEM_MEM);
+        memset (str, 0, sizeof(str));   sprintf(str, "%d GB", value);
+        ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, -1, -1, str);
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, value ? COLOR_GREEN : COLOR_RED, -1);
+        m2_item[eITEM_MEM].result = value ? eRESULT_PASS : eRESULT_FAIL;
+        m2_item[eITEM_MEM].status = eSTATUS_STOP;
+    }
 
     // FB
-    m2_item[eITEM_FB].status = eSTATUS_RUN;
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_FB].ui_id, COLOR_YELLOW, -1);
-    value = system_check (eSYSTEM_FB_Y);
-    memset (str, 0, sizeof(str));   sprintf(str, "%dP", value);
+    if (!m2_item[eITEM_FB].result) {
+        m2_item[eITEM_FB].status = eSTATUS_RUN;
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_FB].ui_id, COLOR_YELLOW, -1);
+        value = system_check (eSYSTEM_FB_Y);
+        memset (str, 0, sizeof(str));   sprintf(str, "%dP", value);
 
-    ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_FB].ui_id, -1, -1, str);
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_FB].ui_id, (value == 1080) ? COLOR_GREEN : COLOR_RED, -1);
-    m2_item[eITEM_FB].result = (value == 1080) ? eRESULT_PASS : eRESULT_FAIL;
-    m2_item[eITEM_FB].status = eSTATUS_STOP;
+        ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_FB].ui_id, -1, -1, str);
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_FB].ui_id, (value == 1080) ? COLOR_GREEN : COLOR_RED, -1);
+        m2_item[eITEM_FB].result = (value == 1080) ? eRESULT_PASS : eRESULT_FAIL;
+        m2_item[eITEM_FB].status = eSTATUS_STOP;
+    }
 
     return 1;
 }
@@ -671,22 +684,26 @@ static int check_device_hdmi (client_t *p)
     int value = 0;
 
     // EDID
-    m2_item[eITEM_EDID].status = eSTATUS_RUN;
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_EDID].ui_id, COLOR_YELLOW, -1);
-    value = hdmi_check (eHDMI_EDID);
-    ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_EDID].ui_id, -1, -1, value ? "PASS":"FAIL");
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_EDID].ui_id, value ? COLOR_GREEN : COLOR_RED, -1);
-    m2_item[eITEM_EDID].result = value ? eRESULT_PASS : eRESULT_FAIL;
-    m2_item[eITEM_EDID].status = eSTATUS_STOP;
+    if (!m2_item[eITEM_EDID].result) {
+        m2_item[eITEM_EDID].status = eSTATUS_RUN;
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_EDID].ui_id, COLOR_YELLOW, -1);
+        value = hdmi_check (eHDMI_EDID);
+        ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_EDID].ui_id, -1, -1, value ? "PASS":"FAIL");
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_EDID].ui_id, value ? COLOR_GREEN : COLOR_RED, -1);
+        m2_item[eITEM_EDID].result = value ? eRESULT_PASS : eRESULT_FAIL;
+        m2_item[eITEM_EDID].status = eSTATUS_STOP;
+    }
 
     // HPD
-    m2_item[eITEM_HPD].status = eSTATUS_RUN;
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_HPD].ui_id, COLOR_YELLOW, -1);
-    value = hdmi_check (eHDMI_HPD);
-    ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_HPD].ui_id, -1, -1, value ? "PASS":"FAIL");
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_HPD].ui_id, value ? COLOR_GREEN : COLOR_RED, -1);
-    m2_item[eITEM_HPD].result = value ? eRESULT_PASS : eRESULT_FAIL;
-    m2_item[eITEM_HPD].status = eSTATUS_STOP;
+    if (!m2_item[eITEM_HPD].result) {
+        m2_item[eITEM_HPD].status = eSTATUS_RUN;
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_HPD].ui_id, COLOR_YELLOW, -1);
+        value = hdmi_check (eHDMI_HPD);
+        ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_HPD].ui_id, -1, -1, value ? "PASS":"FAIL");
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_HPD].ui_id, value ? COLOR_GREEN : COLOR_RED, -1);
+        m2_item[eITEM_HPD].result = value ? eRESULT_PASS : eRESULT_FAIL;
+        m2_item[eITEM_HPD].status = eSTATUS_STOP;
+    }
 
     return 1;
 }
@@ -698,25 +715,28 @@ static int check_device_adc (client_t *p)
     char str[10];
 
     // ADC37
-    m2_item[eITEM_ADC37].status = eSTATUS_RUN;
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_ADC37].ui_id, COLOR_YELLOW, -1);
-    adc_value = adc_check (eADC_H37);
-    memset  (str, 0, sizeof(str));  sprintf (str, "%d", adc_value);
-    ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_ADC37].ui_id, -1, -1, str);
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_ADC37].ui_id, adc_value ? COLOR_GREEN : COLOR_RED, -1);
-    m2_item[eITEM_ADC37].result = adc_value ? eRESULT_PASS : eRESULT_FAIL;
-    m2_item[eITEM_ADC37].status = eSTATUS_STOP;
+    if (!m2_item[eITEM_ADC37].result) {
+        m2_item[eITEM_ADC37].status = eSTATUS_RUN;
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_ADC37].ui_id, COLOR_YELLOW, -1);
+        adc_value = adc_check (eADC_H37);
+        memset  (str, 0, sizeof(str));  sprintf (str, "%d", adc_value);
+        ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_ADC37].ui_id, -1, -1, str);
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_ADC37].ui_id, adc_value ? COLOR_GREEN : COLOR_RED, -1);
+        m2_item[eITEM_ADC37].result = adc_value ? eRESULT_PASS : eRESULT_FAIL;
+        m2_item[eITEM_ADC37].status = eSTATUS_STOP;
+    }
 
     // ADC40
-    m2_item[eITEM_ADC40].status = eSTATUS_RUN;
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_ADC40].ui_id, COLOR_YELLOW, -1);
-    adc_value = adc_check (eADC_H40);
-    memset  (str, 0, sizeof(str));  sprintf (str, "%d", adc_value);
-    ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_ADC40].ui_id, -1, -1, str);
-    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_ADC40].ui_id, adc_value ? COLOR_GREEN : COLOR_RED, -1);
-    m2_item[eITEM_ADC40].result = adc_value ? eRESULT_PASS : eRESULT_FAIL;
-    m2_item[eITEM_ADC40].status = eSTATUS_STOP;
-
+    if (!m2_item[eITEM_ADC40].result) {
+        m2_item[eITEM_ADC40].status = eSTATUS_RUN;
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_ADC40].ui_id, COLOR_YELLOW, -1);
+        adc_value = adc_check (eADC_H40);
+        memset  (str, 0, sizeof(str));  sprintf (str, "%d", adc_value);
+        ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_ADC40].ui_id, -1, -1, str);
+        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_ADC40].ui_id, adc_value ? COLOR_GREEN : COLOR_RED, -1);
+        m2_item[eITEM_ADC40].result = adc_value ? eRESULT_PASS : eRESULT_FAIL;
+        m2_item[eITEM_ADC40].status = eSTATUS_STOP;
+    }
     return 1;
 }
 
@@ -859,7 +879,7 @@ static int audio_sine_wave (client_t *p, int ch)
     if (value < 3000)   return 0;
 
     // Audio Busy check (0 : err, 1 : pass, 2 : busy)
-    while (audio_check (ch) == 2)   sleep (1);
+    while (audio_check (ch) == 2)   usleep (100 * 1000);
 
     for (loop = 0; loop < retry; loop++) {
         adc_board_read (p->adc_fd, ch ? "P13.3" : "P13.4", &value, &cnt);
@@ -871,38 +891,34 @@ static int audio_sine_wave (client_t *p, int ch)
 
 static int check_device_audio (client_t *p)
 {
-    int retry = 3;
+    if (!m2_item [eITEM_AUDIO_LEFT].result) {
+        m2_item [eITEM_AUDIO_LEFT].status = eSTATUS_RUN;
+        ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_LEFT].ui_id, COLOR_YELLOW, -1);
 
-retry_audio:
-    m2_item [eITEM_AUDIO_LEFT].status = eSTATUS_RUN;
-    ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_LEFT].ui_id, COLOR_YELLOW, -1);
-
-    if (audio_sine_wave (p, 0)) {
-        m2_item [eITEM_AUDIO_LEFT].result = eRESULT_PASS;
-        ui_set_sitem (p->pfb, p->pui, m2_item [eITEM_AUDIO_LEFT].ui_id, -1, -1, "PASS");
-        ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_LEFT].ui_id, COLOR_GREEN, -1);
-    } else {
-        ui_set_sitem (p->pfb, p->pui, m2_item [eITEM_AUDIO_LEFT].ui_id, -1, -1, "FAIL");
-        ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_LEFT].ui_id, COLOR_RED, -1);
+        if (audio_sine_wave (p, 0)) {
+            m2_item [eITEM_AUDIO_LEFT].result = eRESULT_PASS;
+            ui_set_sitem (p->pfb, p->pui, m2_item [eITEM_AUDIO_LEFT].ui_id, -1, -1, "PASS");
+            ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_LEFT].ui_id, COLOR_GREEN, -1);
+        } else {
+            ui_set_sitem (p->pfb, p->pui, m2_item [eITEM_AUDIO_LEFT].ui_id, -1, -1, "FAIL");
+            ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_LEFT].ui_id, COLOR_RED, -1);
+        }
+        m2_item [eITEM_AUDIO_LEFT].status = eSTATUS_STOP;
     }
-    m2_item [eITEM_AUDIO_LEFT].status = eSTATUS_STOP;
 
-    m2_item [eITEM_AUDIO_RIGHT].status = eSTATUS_RUN;
-    ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_RIGHT].ui_id, COLOR_YELLOW, -1);
+    if (!m2_item [eITEM_AUDIO_RIGHT].result) {
+        m2_item [eITEM_AUDIO_RIGHT].status = eSTATUS_RUN;
+        ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_RIGHT].ui_id, COLOR_YELLOW, -1);
 
-    if (audio_sine_wave (p, 1)) {
-        m2_item [eITEM_AUDIO_RIGHT].result = eRESULT_PASS;
-        ui_set_sitem (p->pfb, p->pui, m2_item [eITEM_AUDIO_RIGHT].ui_id, -1, -1, "PASS");
-        ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_RIGHT].ui_id, COLOR_GREEN, -1);
-    } else {
-        ui_set_sitem (p->pfb, p->pui, m2_item [eITEM_AUDIO_RIGHT].ui_id, -1, -1, "FAIL");
-        ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_RIGHT].ui_id, COLOR_RED, -1);
-    }
-    m2_item [eITEM_AUDIO_RIGHT].status = eSTATUS_STOP;
-
-    if (!m2_item [eITEM_AUDIO_LEFT].result || !m2_item [eITEM_AUDIO_RIGHT].result) {
-        sleep (1);
-        if (retry)  {   retry--;    goto retry_audio; }
+        if (audio_sine_wave (p, 1)) {
+            m2_item [eITEM_AUDIO_RIGHT].result = eRESULT_PASS;
+            ui_set_sitem (p->pfb, p->pui, m2_item [eITEM_AUDIO_RIGHT].ui_id, -1, -1, "PASS");
+            ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_RIGHT].ui_id, COLOR_GREEN, -1);
+        } else {
+            ui_set_sitem (p->pfb, p->pui, m2_item [eITEM_AUDIO_RIGHT].ui_id, -1, -1, "FAIL");
+            ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_AUDIO_RIGHT].ui_id, COLOR_RED, -1);
+        }
+        m2_item [eITEM_AUDIO_RIGHT].status = eSTATUS_STOP;
     }
     return 1;
 }
@@ -954,11 +970,16 @@ int main (void)
     while (!check_i2cadc (&client))  sleep(1);
 
     pthread_create (&thread_sw_adc, NULL, check_sw_adc, &client);
-    check_device_adc (&client);
-    check_header (&client);
-    check_device_audio (&client);
 
-    while (1)   sleep (1);
+    while (1)   {
+        // retry
+        check_device_hdmi   (&client);
+        check_device_system (&client);
+        check_device_adc    (&client);
+        check_header        (&client);
+        check_device_audio  (&client);
+        sleep (1);
+    }
 
     return 0;
 }
