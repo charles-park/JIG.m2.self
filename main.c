@@ -413,8 +413,8 @@ void *check_sw_adc (void *arg)
     client_t *p = (client_t *)arg;
 
     while (1) {
+	usleep (100 * 1000);
         adc_value = sw_adc_read (SW_ADC_PATH);
-
         if ((SW_eMMC_MIN < adc_value) && (SW_eMMC_MAX > adc_value ))
         {   value = 0;  break; }
 
@@ -422,7 +422,7 @@ void *check_sw_adc (void *arg)
         {   value = 1;  break; }
         printf ("sw adc value error! (emmc:1380~1400, sd:680~700) : %d\n", adc_value);
     }
-
+    new_value = value;
     m2_item[eITEM_SW_uSD].status = m2_item[eITEM_SW_eMMC].status = eSTATUS_RUN;
     while (TimeoutStop) {
         adc_value = sw_adc_read (SW_ADC_PATH);
