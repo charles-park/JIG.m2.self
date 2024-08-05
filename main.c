@@ -319,6 +319,8 @@ void *check_status (void *arg)
     // display stop
     memset (str, 0, sizeof(str));   sprintf (str, "%s", "FINISH");
     ethernet_link_setup (LINK_SPEED_1G);
+    // wait for network stable
+    usleep (APP_LOOP_DELAY * 1000);
 
     if (m2_item [eITEM_MAC_ADDR].result)
         nlp_server_write (p->nlp_ip, NLP_SERVER_MSG_TYPE_MAC, p->mac, p->channel);
