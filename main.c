@@ -32,6 +32,8 @@
 #include <getopt.h>
 #include <pthread.h>
 
+#include <signal.h>
+
 //------------------------------------------------------------------------------
 #include "lib_fbui/lib_fb.h"
 #include "lib_fbui/lib_ui.h"
@@ -310,13 +312,14 @@ void *check_status (void *arg)
             }
 
             if (stop_cnt == eITEM_END) {
-                TimeoutStop = 0;    sleep (1);  break;
+                TimeoutStop = 0;    break;
             }
         }
     }
     // display stop
     memset (str, 0, sizeof(str));   sprintf (str, "%s", "FINISH");
-    ethernet_link_setup (LINK_SPEED_1G);    sleep(1);
+    ethernet_link_setup (LINK_SPEED_1G);
+
     if (m2_item [eITEM_MAC_ADDR].result)
         nlp_server_write (p->nlp_ip, NLP_SERVER_MSG_TYPE_MAC, p->mac, p->channel);
     ui_set_sitem (p->pfb, p->pui, UI_STATUS, -1, -1, str);
@@ -409,8 +412,6 @@ void *check_sw_adc (void *arg)
 
     client_t *p = (client_t *)arg;
 
-    while (!check_i2cadc(p))     sleep(1);
-
     while (1) {
         adc_value = sw_adc_read (SW_ADC_PATH);
 
@@ -447,7 +448,7 @@ void *check_sw_adc (void *arg)
             }
         }
 
-        usleep (APP_LOOP_DELAY * 1000);
+        usleep (100 * 1000);
         if (m2_item[eITEM_SW_uSD].result && m2_item[eITEM_SW_eMMC].result) break;
     }
     m2_item[eITEM_SW_uSD].status = m2_item[eITEM_SW_eMMC].status = eSTATUS_STOP;
@@ -495,7 +496,7 @@ void *check_device_ethernet (void *arg)
 
             ui_set_ritem (p->pfb, p->pui, UI_ETHERNET_SWITCH, RUN_BOX_ON, -1);
         }
-        sleep (1);
+        usleep (APP_LOOP_DELAY * 1000);
     }
     return arg;
 }
@@ -548,7 +549,7 @@ void *check_device_usb (void *arg)
         }
         if (m2_item[eITEM_USB30].result && m2_item[eITEM_USB20].result && m2_item[eITEM_USB_C].result)
             break;
-        sleep (1);
+        usleep (APP_LOOP_DELAY * 1000);
     }
 
     return arg;
@@ -567,7 +568,7 @@ static int check_header (client_t *p)
         if (!m2_item[eITEM_HEADER_PT1 + i].result) {
             ui_set_ritem (p->pfb, p->pui, ui_id + i, COLOR_YELLOW, -1);
             m2_item[eITEM_HEADER_PT1 + i].status = eSTATUS_RUN;
-            header_pattern_set   (i);   usleep (100 * 1000);
+            header_pattern_set   (i);   usleep (APP_LOOP_DELAY * 1000);
             memset (pattern40, 0, sizeof(pattern40));
             memset (pattern14, 0, sizeof(pattern14));
             adc_board_read (p->adc_fd,  "CON1", &pattern40[1],  &cnt);
@@ -616,6 +617,7 @@ void *check_device_storage (void *arg)
             m2_item[eITEM_uSD].status = eSTATUS_RUN;
             ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_uSD].ui_id, COLOR_YELLOW, -1);
             value = storage_check (eSTORAGE_uSD);
+            memset (str, 0, sizeof(str));   sprintf(str, "%d MB/s", value);
 
             ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_uSD].ui_id, -1, -1, str);
             ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_uSD].ui_id, value ? COLOR_GREEN : COLOR_RED, -1);
@@ -639,7 +641,7 @@ void *check_device_storage (void *arg)
         }
         if (m2_item [eITEM_eMMC].result && m2_item [eITEM_uSD].result && m2_item [eITEM_NVME].result)
             break;
-        sleep (1);
+        usleep (APP_LOOP_DELAY * 1000);
     }
     return arg;
 }
@@ -797,9 +799,9 @@ static int check_iperf_speed (client_t *p)
 retry_iperf:
     m2_item [eITEM_IPERF].status = eSTATUS_RUN;
     ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_IPERF].ui_id, COLOR_YELLOW, -1);
-    nlp_server_write (p->nlp_ip, NLP_SERVER_MSG_TYPE_UDP, "start", 0);  sleep (1);
+    nlp_server_write (p->nlp_ip, NLP_SERVER_MSG_TYPE_UDP, "start", 0);  usleep (APP_LOOP_DELAY * 1000);
     value = iperf3_speed_check(p->nlp_ip, NLP_SERVER_MSG_TYPE_UDP);
-    nlp_server_write (p->nlp_ip, NLP_SERVER_MSG_TYPE_UDP, "stop", 0);   sleep (1);
+    nlp_server_write (p->nlp_ip, NLP_SERVER_MSG_TYPE_UDP, "stop", 0);   usleep (APP_LOOP_DELAY * 1000);
 
     memset  (str, 0, sizeof(str));
     sprintf (str, "%d Mbits/sec", value);
@@ -810,7 +812,7 @@ retry_iperf:
     m2_item [eITEM_IPERF].status = eSTATUS_STOP;
 
     if (!m2_item [eITEM_IPERF].result) {
-        sleep (1);
+        usleep (APP_LOOP_DELAY * 1000);
         if (retry) {    retry--;    goto retry_iperf;   }
     }
     return 1;
@@ -824,11 +826,16 @@ static int check_i2cadc (client_t *p)
     // ADC Board Check
     int value = 0, cnt = 1;
 
-    p->adc_fd = adc_board_init (I2C_ADC_DEV);
-    if (p->adc_fd != -1) {
-        adc_board_read (p->adc_fd, "P3.2", &value, &cnt);
-        p->channel = (value > 4000) ? NLP_SERVER_CHANNEL_RIGHT : NLP_SERVER_CHANNEL_LEFT;
-        return 1;
+    if (p->adc_fd == 0 )    p->adc_fd = adc_board_init (I2C_ADC_DEV);
+
+    if (p->adc_fd != 0 ) {
+        // DC Jack 12V ~ 19V Check (2.4V ~ 3.8V)
+        adc_board_read (p->adc_fd, "P13.2", &value, &cnt);
+        if (value > 2000) {
+            adc_board_read (p->adc_fd, "P3.2", &value, &cnt);
+            p->channel = (value > 4000) ? NLP_SERVER_CHANNEL_RIGHT : NLP_SERVER_CHANNEL_LEFT;
+            return 1;
+        }
     }
     return 0;
 }
@@ -932,15 +939,13 @@ static int client_setup (client_t *p)
     if ((p->pfb = fb_init (DEVICE_FB)) == NULL)         exit(1);
     if ((p->pui = ui_init (p->pfb, CONFIG_UI)) == NULL) exit(1);
 
-    check_i2cadc (p);
-
     pthread_create (&thread_check_status, NULL, check_status, p);
 
-    while (!check_server (p))   sleep (1);
+    while (!check_server (p))   usleep (APP_LOOP_DELAY * 1000);
 
     pthread_create (&thread_hp_detect,    NULL, check_hp_detect, p);
 
-    ethernet_link_setup (LINK_SPEED_1G);    sleep(1);
+    ethernet_link_setup (LINK_SPEED_1G);
 
     check_iperf_speed (p);
     check_mac_addr (p);
@@ -957,6 +962,12 @@ static int client_setup (client_t *p)
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
+void term_sig_handler (int sig)
+{
+    printf ("%s : %d\n", __func__, sig);
+}
+
+//------------------------------------------------------------------------------
 int main (void)
 {
     client_t client;
@@ -967,8 +978,7 @@ int main (void)
     // UI
     client_setup (&client);
 
-    while (!check_i2cadc (&client))  sleep(1);
-
+    while (!check_i2cadc(&client))  usleep (APP_LOOP_DELAY * 1000);
     pthread_create (&thread_sw_adc, NULL, check_sw_adc, &client);
 
     while (1)   {
@@ -978,7 +988,7 @@ int main (void)
         check_device_adc    (&client);
         check_header        (&client);
         check_device_audio  (&client);
-        sleep (1);
+        usleep (APP_LOOP_DELAY * 1000);
     }
 
     return 0;

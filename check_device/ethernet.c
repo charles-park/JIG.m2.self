@@ -77,11 +77,12 @@ int ethernet_link_setup (int speed)
     FILE *fp;
     char cmd_line[STR_PATH_LENGTH], retry = 10;
 
-    memset (cmd_line, 0x00, sizeof(cmd_line));
-    sprintf(cmd_line,"ethtool -s eth0 speed %d duplex full", speed);
-    if ((fp = popen(cmd_line, "w")) != NULL)
-        pclose(fp);
-
+    if (ethernet_link_speed() != speed) {
+        memset (cmd_line, 0x00, sizeof(cmd_line));
+        sprintf(cmd_line,"ethtool -s eth0 speed %d duplex full", speed);
+        if ((fp = popen(cmd_line, "w")) != NULL)
+            pclose(fp);
+    }
     // timeout 10 sec
     while (retry--) {
         if (ethernet_link_speed() == speed)
