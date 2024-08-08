@@ -71,6 +71,10 @@
 
 #define IP_ADDR_SIZE    20
 
+#define TEST_MODEL_NONE 0
+#define TEST_MODEL_8GB  8
+#define TEST_MODEL_16GB 16
+
 //------------------------------------------------------------------------------
 static int TimeoutStop = TIMEOUT_SEC;
 
@@ -82,6 +86,9 @@ typedef struct client__t {
 
     int adc_fd;
     int channel;
+    int test_model;     // 0 : none, 1 : 8GB, 2 : 16GB (ADC P3.9->16GB, ADC P3.8->8GB)
+    int board_mem;
+    int eth_switch;     // 0 : stop, 1 : running
 
     char nlp_ip     [IP_ADDR_SIZE];
     char efuse_data [EFUSE_UUID_SIZE +1];
@@ -316,6 +323,10 @@ void *check_status (void *arg)
             }
         }
     }
+
+    // ethernet switch thread check.
+    while (p->eth_switch)   usleep (APP_LOOP_DELAY * 1000);
+
     // display stop
     memset (str, 0, sizeof(str));   sprintf (str, "%s", "FINISH");
     ethernet_link_setup (LINK_SPEED_1G);
@@ -347,7 +358,7 @@ void *check_status (void *arg)
 void *check_hp_detect (void *arg);
 void *check_hp_detect (void *arg)
 {
-    int value = 0, new_value = 0, status = 0;
+    int value = 0, new_value = 0, long_press_cnt = 0;
 
     client_t *p = (client_t *)arg;
 
@@ -356,28 +367,42 @@ void *check_hp_detect (void *arg)
     gpio_get_value (HP_DET_GPIO, &value);
 
     m2_item[eITEM_HP_DET_H].status = m2_item[eITEM_HP_DET_L].status = eSTATUS_RUN;
-    while (TimeoutStop) {
+    while (1) {
         if (gpio_get_value (HP_DET_GPIO, &new_value)) {
+
             if (value != new_value) {
                 value = new_value;
-                status |= value ? 0x02 : 0x01;
-
                 if (value) {
-                    ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_HP_DET_H].ui_id, -1, -1, "PASS");
-                    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_HP_DET_H].ui_id, COLOR_GREEN, -1);
-                    m2_item[eITEM_HP_DET_L].result = eRESULT_PASS;
+                    if (m2_item[eITEM_HP_DET_H].status == eSTATUS_RUN) {
+                        ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_HP_DET_H].ui_id, -1, -1, "PASS");
+                        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_HP_DET_H].ui_id, COLOR_GREEN, -1);
+                        m2_item[eITEM_HP_DET_H].result = eRESULT_PASS;
+                        m2_item[eITEM_HP_DET_H].status = eSTATUS_STOP;
+                    }
                 } else {
-                    ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_HP_DET_L].ui_id, -1, -1, "PASS");
-                    ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_HP_DET_L].ui_id, COLOR_GREEN, -1);
-                    m2_item[eITEM_HP_DET_H].result = eRESULT_PASS;
+                    if (m2_item[eITEM_HP_DET_L].status == eSTATUS_RUN) {
+                        ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_HP_DET_L].ui_id, -1, -1, "PASS");
+                        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_HP_DET_L].ui_id, COLOR_GREEN, -1);
+                        m2_item[eITEM_HP_DET_L].result = eRESULT_PASS;
+                        m2_item[eITEM_HP_DET_L].status = eSTATUS_STOP;
+                    }
                 }
             }
         }
         usleep (100 * 1000);
-        if (m2_item[eITEM_HP_DET_H].result && m2_item[eITEM_HP_DET_L].result)   break;
+
+        if (new_value)  long_press_cnt++;
+        else            long_press_cnt = 0;
+
+        if (long_press_cnt > 30) {
+            long_press_cnt = 0;
+            if (m2_item [eITEM_MAC_ADDR].result) {
+                tolowerstr (p->mac);
+                nlp_server_write (p->nlp_ip, NLP_SERVER_MSG_TYPE_MAC, p->mac, p->channel);
+            }
+        }
     }
     gpio_unexport  (HP_DET_GPIO);
-    m2_item[eITEM_HP_DET_H].status = m2_item[eITEM_HP_DET_L].status = eSTATUS_STOP;
     return arg;
 }
 
@@ -467,6 +492,10 @@ void *check_device_ethernet (void *arg)
     client_t *p = (client_t *)arg;
 
     m2_item[eITEM_ETHERNET_100M].status = m2_item[eITEM_ETHERNET_1G].status = eSTATUS_RUN;
+
+    // ethernet switch thread run
+    p->eth_switch = 1;
+
     while (TimeoutStop) {
         switch (speed) {
             case LINK_SPEED_1G:
@@ -500,6 +529,8 @@ void *check_device_ethernet (void *arg)
         }
         usleep (APP_LOOP_DELAY * 1000);
     }
+    // ethernet switch thread end
+    p->eth_switch = 0;
     return arg;
 }
 
@@ -652,17 +683,27 @@ void *check_device_storage (void *arg)
 static int check_device_system (client_t *p)
 {
     int value = 0;
-    char str[10];
+    char str[20];
 
     // MEM
-    if (!m2_item[eITEM_MEM].result) {
+//    if (!m2_item[eITEM_MEM].result && TimeoutStop) {
+    if (TimeoutStop) {
         m2_item[eITEM_MEM].status = eSTATUS_RUN;
         ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, COLOR_YELLOW, -1);
         value = system_check (eSYSTEM_MEM);
-        memset (str, 0, sizeof(str));   sprintf(str, "%d GB", value);
-        ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, -1, -1, str);
-        ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, value ? COLOR_GREEN : COLOR_RED, -1);
-        m2_item[eITEM_MEM].result = value ? eRESULT_PASS : eRESULT_FAIL;
+        p->board_mem = value;
+        memset (str, 0, sizeof(str));
+        if (p->test_model) {
+            sprintf (str, "%d / T-%d GB", p->board_mem, p->test_model);
+            ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, -1, -1, str);
+            ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id,
+                            (p->test_model == p->board_mem) ? COLOR_GREEN : COLOR_RED, -1);
+        } else {
+            sprintf(str, "%d GB", value);
+            ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, -1, -1, str);
+            ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_MEM].ui_id, value ? COLOR_GREEN : COLOR_RED, -1);
+            m2_item[eITEM_MEM].result = value ? eRESULT_PASS : eRESULT_FAIL;
+        }
         m2_item[eITEM_MEM].status = eSTATUS_STOP;
     }
 
@@ -678,6 +719,9 @@ static int check_device_system (client_t *p)
         m2_item[eITEM_FB].result = (value == 1080) ? eRESULT_PASS : eRESULT_FAIL;
         m2_item[eITEM_FB].status = eSTATUS_STOP;
     }
+
+    if (p->test_model && (p->test_model != p->board_mem))
+        m2_item[eITEM_MEM].result = eRESULT_FAIL;
 
     return 1;
 }
@@ -836,6 +880,18 @@ static int check_i2cadc (client_t *p)
         if (value > 2000) {
             adc_board_read (p->adc_fd, "P3.2", &value, &cnt);
             p->channel = (value > 4000) ? NLP_SERVER_CHANNEL_RIGHT : NLP_SERVER_CHANNEL_LEFT;
+
+            p->test_model = TEST_MODEL_NONE;
+            // Test Model 8GB
+            adc_board_read (p->adc_fd, "P3.8", &value, &cnt);
+            if (value > 4000)
+                p->test_model = TEST_MODEL_8GB;
+
+            // Test Model 16GB
+            adc_board_read (p->adc_fd, "P3.9", &value, &cnt);
+            if (value > 4000)
+                p->test_model = TEST_MODEL_16GB;
+
             return 1;
         }
     }
@@ -943,6 +999,8 @@ static int client_setup (client_t *p)
 
     pthread_create (&thread_check_status, NULL, check_status, p);
 
+    check_device_hdmi(p);   check_device_system (p);
+
     while (!check_server (p))   usleep (APP_LOOP_DELAY * 1000);
 
     pthread_create (&thread_hp_detect,    NULL, check_hp_detect, p);
@@ -956,17 +1014,7 @@ static int client_setup (client_t *p)
     pthread_create (&thread_storage,  NULL, check_device_storage, p);
     pthread_create (&thread_ethernet, NULL, check_device_ethernet, p);
 
-    check_device_hdmi(p);
-    check_device_system (p);
-
     return 1;
-}
-
-//------------------------------------------------------------------------------
-//------------------------------------------------------------------------------
-void term_sig_handler (int sig)
-{
-    printf ("%s : %d\n", __func__, sig);
 }
 
 //------------------------------------------------------------------------------
@@ -981,6 +1029,8 @@ int main (void)
     client_setup (&client);
 
     while (!check_i2cadc(&client))  usleep (APP_LOOP_DELAY * 1000);
+    check_device_system (&client);
+
     pthread_create (&thread_sw_adc, NULL, check_sw_adc, &client);
 
     while (1)   {
