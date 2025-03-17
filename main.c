@@ -288,9 +288,11 @@ void *check_status (void *arg)
     client_t *p = (client_t *)arg;
 
     while (TimeoutStop) {
+        onoff = !onoff;
         ui_set_ritem (p->pfb, p->pui, ALIVE_DISPLAY_UI_ID,
                     onoff ? COLOR_GREEN : p->pui->bc.uint, -1);
-        onoff = !onoff;
+        ui_set_sitem (p->pfb, p->pui, ALIVE_DISPLAY_UI_ID, -1, -1,
+                    onoff ? p->pui->b_item[ALIVE_DISPLAY_UI_ID].s_dfl : __DATE__);
 
         if (m2_item[eITEM_SERVER_IP].result && TimeoutStop) {
             memset (str, 0, sizeof(str));
@@ -899,6 +901,8 @@ static int check_i2cadc (client_t *p)
 }
 
 //------------------------------------------------------------------------------
+#define	M2_NLP_SERVER_PORT	9002
+
 static int check_server (client_t *p)
 {
     char ip_addr [IP_ADDR_SIZE];
@@ -916,7 +920,7 @@ static int check_server (client_t *p)
         memset (ip_addr, 0, sizeof(ip_addr));
 
         ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_SERVER_IP].ui_id, COLOR_YELLOW, -1);
-        if (nlp_server_find(ip_addr)) {
+        if (nlp_server_find("/boot/nlp_server.cfg", M2_NLP_SERVER_PORT, ip_addr)) {
             memcpy (p->nlp_ip, ip_addr, IP_ADDR_SIZE);
             {
                 char ip_port [32];
@@ -928,6 +932,7 @@ static int check_server (client_t *p)
             }
             m2_item [eITEM_SERVER_IP].result = eRESULT_PASS;
             m2_item [eITEM_SERVER_IP].status = eSTATUS_STOP;
+            TimeoutStop = TIMEOUT_SEC;
             return 1;
         } else {
             ui_set_ritem (p->pfb, p->pui, m2_item [eITEM_SERVER_IP].ui_id, COLOR_RED, -1);
