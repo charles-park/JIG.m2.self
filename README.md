@@ -228,7 +228,10 @@ Entry Point:  00000000
 root@server:~# vi /etc/overlayroot.conf
 ...
 overlayroot_cfgdisk="disabled"
-overlayroot="tmpfs"
+# all partition overlay fs
+# overlayroot="tmpfs"
+# root partition only overlay fs
+overlayroot="tmpfs:recurse=0"
 ```
 * overlayroot disable
 ```
@@ -239,4 +242,7 @@ root@server:~#
 
 // Change overlayroot value "tmpfs" to "" for overlayroot disable
 root@server:~# vi /etc/overlayroot.conf
+overlayroot_cfgdisk="disabled"
+overlayroot=""
+
 ```
