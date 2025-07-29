@@ -27,13 +27,15 @@ enum {
     // USB 2.0
     eUSB_20,
     // USB-C
-    eUSB_C,
+    eUSB_C1,    // up side
+    eUSB_C2,    // dn side
     // USB 3.0
     eUSB_30_W,
     // USB 2.0
     eUSB_20_W,
     // USB-C
-    eUSB_C_W,
+    eUSB_C1_W,  // up side
+    eUSB_C2_W,  // dn side
 
     eUSB_END
 };

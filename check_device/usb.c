@@ -61,7 +61,9 @@ struct device_usb DeviceUSB [eUSB_END] = {
     { "/sys/bus/usb/devices/6-1", DEFAULT_USB30_R, DEFAULT_USB30_W, DEFAULT_USB30_L, 0 },
     // eUSB_20, USB 2.0
     { "/sys/bus/usb/devices/1-1", DEFAULT_USB20_R, DEFAULT_USB20_W, DEFAULT_USB20_L, 0 },
-    // eUSB_C, USB 3.0
+    // eUSB_C1, USB 3.0 up side
+    { "/sys/bus/usb/devices/9-1", DEFAULT_USB30_R, DEFAULT_USB30_W, DEFAULT_USB30_L, 0 },
+    // eUSB_C2, USB 3.0 dn side
     { "/sys/bus/usb/devices/9-1", DEFAULT_USB30_R, DEFAULT_USB30_W, DEFAULT_USB30_L, 0 },
 };
 
@@ -102,7 +104,7 @@ static int usb_rw (const char *path, const char *check_cmd)
         memset (rdata, 0x00, sizeof(cmd));
         // 1 line read
         fgets (rdata, sizeof(rdata), fp);
-        fclose (fp);
+        pclose (fp);
         // find string "sd"
         if ((ptr = strstr (rdata, "sd")) != NULL) {
             memset  (cmd, 0, sizeof (cmd));
@@ -128,6 +130,57 @@ static int usb_rw (const char *path, const char *check_cmd)
 }
 
 //------------------------------------------------------------------------------
+static int usb_c_side (const char *path, int id)
+{
+    FILE *fp;
+    char cmd[STR_PATH_LENGTH], rdata[STR_PATH_LENGTH], *ptr;
+    unsigned long size = 0;
+
+    memset  (cmd, 0x00, sizeof(cmd));
+    sprintf (cmd, "find %s/ -name size* 2>&1", path);
+
+    printf ("%s(%d)\n", __func__, __LINE__);
+    if ((fp = popen (cmd, "r")) != NULL) {
+        memset (rdata, 0x00, sizeof(rdata));
+        // 1 line read
+        fgets (rdata, sizeof(rdata), fp);
+        pclose (fp);
+
+        printf ("%s(%d) : rdata = %s\n", __func__, __LINE__, rdata);
+        if (!strlen(rdata))     return 0;
+
+        memset (cmd, 0x00, sizeof(cmd));
+        snprintf (cmd, sizeof(cmd), "cat %s", rdata);
+
+        if ((fp = popen (cmd, "r")) != NULL) {
+            memset (rdata, 0x00, sizeof(rdata));
+            if ((fgets (rdata, sizeof(rdata), fp)) != NULL) {
+                size = atol(rdata);
+                printf ("%s : id = %d, size = %ld\n", __func__, id, size);
+            }
+            pclose (fp);
+        }
+    }
+
+#define USB_C1_SIZE_H   40000000
+#define USB_C1_SIZE_L   30000000
+#define USB_C2_SIZE_H   16000000
+#define USB_C2_SIZE_L   15000000
+
+    switch (id) {
+        case eUSB_C1:   // 16GB eMMC Reader
+            if ((size > USB_C1_SIZE_L) && (size < USB_C1_SIZE_H))   return 1;
+            break;
+        case eUSB_C2:   // 8GB eMMC Reader
+            if ((size > USB_C2_SIZE_L) && (size < USB_C2_SIZE_H))   return 1;
+            break;
+        default:
+            return 1;
+    }
+    return 0;
+}
+
+//------------------------------------------------------------------------------
 int usb_check (int id)
 {
     int value = 0;
@@ -140,11 +193,14 @@ int usb_check (int id)
         return 0;
 
     switch (id) {
-        case eUSB_30_W: case eUSB_20_W: case eUSB_C_W:
+        case eUSB_C1_W: case eUSB_C2_W:
+        case eUSB_30_W: case eUSB_20_W:
             value = usb_rw (DeviceUSB[id].path, USB_W_CHECK);
             return (value > DeviceUSB[id].w_min) ? value : 0;
         default :
-            value = usb_rw (DeviceUSB[id].path, USB_R_CHECK);
+            if (usb_c_side (DeviceUSB[id].path, id))
+                value = usb_rw (DeviceUSB[id].path, USB_R_CHECK);
+
             return (value > DeviceUSB[id].r_min) ? value : 1;
     }
 }

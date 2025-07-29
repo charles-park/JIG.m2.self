@@ -132,7 +132,8 @@ enum {
     // usb
     eITEM_USB30,
     eITEM_USB20,
-    eITEM_USB_C,
+    eITEM_USB_C1,   // UP side
+    eITEM_USB_C2,   // DN side
 
     eITEM_SW_eMMC,
     eITEM_SW_uSD,
@@ -171,7 +172,8 @@ enum {
     eUI_NVME = 87,
     eUI_USB30 = 102,
     eUI_USB20 = 107,
-    eUI_USB_C = 122,
+    eUI_USB_C1 = 123,
+    eUI_USB_C2 = 133,
     eUI_SW_eMMC = 178,
     eUI_SW_uSD = 179,
     eUI_ETHERNET_100M = 152,
@@ -208,7 +210,8 @@ struct check_item m2_item [eITEM_END] = {
     { eITEM_NVME,           eUI_NVME,           eSTATUS_WAIT, eRESULT_FAIL, "nvme" },
     { eITEM_USB30,          eUI_USB30,          eSTATUS_WAIT, eRESULT_FAIL, "usb3" },
     { eITEM_USB20,          eUI_USB20,          eSTATUS_WAIT, eRESULT_FAIL, "usb2" },
-    { eITEM_USB_C,          eUI_USB_C,          eSTATUS_WAIT, eRESULT_FAIL, "usbc" },
+    { eITEM_USB_C1,         eUI_USB_C1,         eSTATUS_WAIT, eRESULT_FAIL, "usbc1" },
+    { eITEM_USB_C2,         eUI_USB_C2,         eSTATUS_WAIT, eRESULT_FAIL, "usbc2" },
     { eITEM_SW_eMMC,        eUI_SW_eMMC,        eSTATUS_WAIT, eRESULT_FAIL, "sw-e" },
     { eITEM_SW_uSD,         eUI_SW_uSD,         eSTATUS_WAIT, eRESULT_FAIL, "sw-s" },
     { eITEM_ETHERNET_100M,  eUI_ETHERNET_100M,  eSTATUS_WAIT, eRESULT_FAIL, "eth-l" },
@@ -570,20 +573,36 @@ void *check_device_usb (void *arg)
             m2_item[eITEM_USB20].status = eSTATUS_STOP;
         }
 
-        // USB_C
-        if (!m2_item[eITEM_USB_C].result) {
-            m2_item[eITEM_USB_C].status = eSTATUS_RUN;
-            ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_USB_C].ui_id, COLOR_YELLOW, -1);
-            value = usb_check (eUSB_C);
+        // USB_C1 (Up side : 16GB)
+        if (!m2_item[eITEM_USB_C1].result) {
+            m2_item[eITEM_USB_C1].status = eSTATUS_RUN;
+            ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_USB_C1].ui_id, COLOR_YELLOW, -1);
+            value = usb_check (eUSB_C1);
             memset (str, 0, sizeof(str));   sprintf(str, "%d MB/s", value);
 
-            ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_USB_C].ui_id, -1, -1, str);
-            ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_USB_C].ui_id, (value > 100) ? COLOR_GREEN : COLOR_RED, -1);
-            m2_item[eITEM_USB_C].result = (value > 100) ? eRESULT_PASS : eRESULT_FAIL;
-            m2_item[eITEM_USB_C].status = eSTATUS_STOP;
+            ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_USB_C1].ui_id, -1, -1, str);
+            ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_USB_C1].ui_id, (value > 100) ? COLOR_GREEN : COLOR_RED, -1);
+            m2_item[eITEM_USB_C1].result = (value > 100) ? eRESULT_PASS : eRESULT_FAIL;
+            m2_item[eITEM_USB_C1].status = eSTATUS_STOP;
         }
-        if (m2_item[eITEM_USB30].result && m2_item[eITEM_USB20].result && m2_item[eITEM_USB_C].result)
+
+        // USB_C2 (DN Side : 8GB)
+        if (!m2_item[eITEM_USB_C2].result) {
+            m2_item[eITEM_USB_C2].status = eSTATUS_RUN;
+            ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_USB_C2].ui_id, COLOR_YELLOW, -1);
+            value = usb_check (eUSB_C2);
+            memset (str, 0, sizeof(str));   sprintf(str, "%d MB/s", value);
+
+            ui_set_sitem (p->pfb, p->pui, m2_item[eITEM_USB_C2].ui_id, -1, -1, str);
+            ui_set_ritem (p->pfb, p->pui, m2_item[eITEM_USB_C2].ui_id, (value > 100) ? COLOR_GREEN : COLOR_RED, -1);
+            m2_item[eITEM_USB_C2].result = (value > 100) ? eRESULT_PASS : eRESULT_FAIL;
+            m2_item[eITEM_USB_C2].status = eSTATUS_STOP;
+        }
+
+        if (m2_item[eITEM_USB30 ].result && m2_item[eITEM_USB20 ].result &&
+            m2_item[eITEM_USB_C1].result && m2_item[eITEM_USB_C2].result)
             break;
+
         usleep (APP_LOOP_DELAY * 1000);
     }
 
